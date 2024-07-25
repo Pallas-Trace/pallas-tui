@@ -1,15 +1,15 @@
+// Pallas includes
+#include "pallas/pallas_storage.h"
+
+#include "tui.h"
+
+
 #include <iostream>
 #include <cstring>
 
 // Curses for TUI
 #include <curses.h>
 
-// Pallas includes
-#include <pallas/pallas.h>
-#include <pallas/pallas_read.h>
-#include <pallas/pallas_storage.h>
-
-#include "tui.h"
 
 void usage(const char* prog_name) {
   std::cout << "Usage : " << prog_name << " [options] <trace file>" << std::endl;
@@ -44,10 +44,9 @@ int main(int argc, char *argv[]) {
   auto trace = pallas::GlobalArchive();
   pallasReadGlobalArchive(&trace, trace_name);
 
-  pallas::ThreadReader tr = pallas::ThreadReader(trace.archive_list[0], trace.archive_list[0]->threads[0]->id, pallas::ThreadReaderOptions::None);
+  PallasExplorer explorer = PallasExplorer(trace);
 
-  initWindow();
-  while (updateWindow(&tr)) {}
+  while (explorer.updateWindow()) {}
 
   endwin();
 
