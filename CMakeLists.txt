@@ -6,6 +6,8 @@ pkg_check_modules(PALLAS REQUIRED pallas)
 
 include(FindCurses)
 
+link_libraries(ncurses)
+
 link_libraries(${PALLAS_LIBRARIES})
 link_directories(${PALLAS_LIBRARY_DIRS})
 include_directories(PUBLIC ${PALLAS_INCLUDE_DIRS})
