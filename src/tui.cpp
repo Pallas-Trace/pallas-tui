@@ -2,11 +2,11 @@
 #include "pallas/pallas.h"
 #include "pallas/pallas_archive.h"
 #include "pallas/pallas_read.h"
+#include "pallas/pallas_timestamp.h"
 
 #include <cstdlib>
 #include <curses.h>
 #include <iostream>
-#include <ostream>
 #include <string>
 #include <vector>
 
@@ -18,35 +18,31 @@ void panic(std::string errmsg) {
   exit(1);
 }
 
-void wprintwCurToken(WINDOW *win, const pallas::ThreadReader *tr) {
-  auto current_token = tr->pollCurToken();
-  switch (current_token.type) {
-    case pallas::TypeEvent:
-      wprintw(
-          win,
-          "E%d : %lu",
-          current_token.id,
-          tr->referential_timestamp
-      );
-      break;
-    case pallas::TypeSequence:
-      wprintw(
-          win,
-          "S%d : %lu",
-          current_token.id,
-          tr->referential_timestamp
-      );
-      break;
-    case pallas::TypeLoop:
-      wprintw(
-          win,
-          "L%d : %lu",
-          current_token.id,
-          tr->referential_timestamp
-      );
-      break;
-    case pallas::TypeInvalid:
-      panic("Encountered invalid token");
+void wprintwToken(WINDOW *win, const pallas::Token &tok) {
+  switch (tok.type) {
+  case pallas::TypeEvent:
+    wprintw(
+        win,
+        "Event %d",
+        tok.id
+    );
+    break;
+  case pallas::TypeSequence:
+    wprintw(
+        win,
+        "Sequence %d",
+        tok.id
+    );
+    break;
+  case pallas::TypeLoop:
+    wprintw(
+        win,
+        "Loop %d",
+        tok.id
+    );
+    break;
+  case pallas::TypeInvalid:
+    panic("Encountered invalid token");
   }
 }
 
@@ -72,8 +68,8 @@ PallasExplorer::PallasExplorer(pallas::GlobalArchive global_archive) {
   // Ncurses initialisation
   initscr();
   cbreak();
-  keypad(stdscr, TRUE);
   noecho();
+  curs_set(0);
 
   // Viewers initialisation
 
@@ -90,38 +86,95 @@ PallasExplorer::PallasExplorer(pallas::GlobalArchive global_archive) {
 
   this->trace_viewer = derwin(trace_container, y - 2, x/2 - 2, 1, 1);
   this->token_viewer = derwin(token_container, y - 2, x/2 - 2, 1, 1);
+
+  keypad(this->trace_viewer, TRUE);
 }
 
 bool PallasExplorer::updateWindow() {
   pallas::ThreadReader &tr = this->readers[current_archive_index][current_thread_index];
-  werase(trace_viewer);
-  werase(token_viewer);
+
+  this->renderTraceWindow(&tr);
+  this->renderTokenWindow(&tr);
 
   pallas::Token tok = tr.pollCurToken();
-  wprintwCurToken(token_viewer, &tr);
-  wrefresh(this->trace_viewer);
-  wrefresh(this->token_viewer);
 
   int ch = wgetch(trace_viewer);
   switch (ch) {
-    case 'q':
-      return false;
-    case 'h':
-    case KEY_LEFT:
-      if (tr.current_frame > 0) tr.leaveBlock();
-      break;
-    case 'j':
-    case KEY_DOWN:
-      if (!tr.isEndOfCurrentBlock()) tr.moveToNextToken();
-      break;
-    case 'k':
-    case KEY_UP:
-      if (tr.callstack_index[tr.current_frame] > 0) tr.moveToPrevToken();
-      break;
-    case 'l':
-    case KEY_RIGHT:
-      if (tok.isIterable()) tr.enterBlock(tok);
-      break;
+  case 'q':
+    return false;
+  case 'h':
+  case KEY_LEFT:
+    if (tr.current_frame > 0) tr.leaveBlock();
+    break;
+  case 'j':
+  case KEY_DOWN:
+    if (!tr.isEndOfCurrentBlock()) tr.moveToNextToken();
+    break;
+  case 'k':
+  case KEY_UP:
+    if (tr.callstack_index[tr.current_frame] > 0) tr.moveToPrevToken();
+    break;
+  case 'l':
+  case KEY_RIGHT:
+    if (tok.isIterable()) tr.enterBlock(tok);
+    break;
   }
   return true;
+}
+
+void PallasExplorer::renderTraceWindow(pallas::ThreadReader *tr) {
+  werase(trace_viewer);
+
+  auto current_iterable_token = tr->getCurIterable();
+  if (current_iterable_token.type == pallas::TypeSequence) {
+    auto seq = tr->thread_trace->getSequence(current_iterable_token);
+    for (pallas::Token tok : seq->tokens) {
+      wprintwToken(this->trace_viewer, tok);
+      wprintw(this->trace_viewer, "\n");
+    }
+  } else if (current_iterable_token.type == pallas::TypeLoop) {
+    auto loop = tr->thread_trace->getLoop(current_iterable_token);
+    auto tok = loop->repeated_token;
+    int nb_iterations = loop->nb_iterations.at(tr->tokenCount[current_iterable_token]);
+    wprintwToken(this->trace_viewer, tok);
+    wprintw(this->trace_viewer, "\t%d/%d", tr->callstack_index[tr->current_frame], nb_iterations);
+  } else {
+      panic("Current iterable token is not iterable");
+  }
+
+  wrefresh(this->trace_viewer);
+}
+
+void PallasExplorer::renderTokenWindow(pallas::ThreadReader *tr) {
+  werase(token_viewer);
+  pallas::Token current_token = tr->pollCurToken();
+
+  pallas_duration_t current_token_duration;
+  switch (current_token.type) {
+  case pallas::TypeEvent:
+    current_token_duration = tr->getEventSummary(current_token)->durations->at(tr->tokenCount[current_token]);
+    break;
+  case pallas::TypeSequence:
+    current_token_duration = tr->thread_trace->getSequence(current_token)->durations->at(tr->tokenCount[current_token]);
+    break;
+  case pallas::TypeLoop:
+    current_token_duration = tr->getLoopDuration(current_token);
+    break;
+  case pallas::TypeInvalid:
+    panic("Encountered invalid token");
+  }
+
+  // Print token information
+  wprintwToken(this->token_viewer, current_token);
+  wprintw(this->token_viewer, "\n");
+
+  wprintw(
+      this->token_viewer,
+      "  Beginning timestamp : %lfs\n"
+      "  Duration            : %lfs\n",
+      tr->referential_timestamp / 1e6,
+      current_token_duration / 1e6
+  );
+
+  wrefresh(this->token_viewer);
 }

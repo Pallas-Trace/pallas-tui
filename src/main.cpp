@@ -49,5 +49,4 @@ int main(int argc, char *argv[]) {
   while (explorer.updateWindow()) {}
 
   endwin();
-
 }

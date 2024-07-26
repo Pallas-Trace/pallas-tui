@@ -27,4 +27,7 @@ private:
 
   WINDOW *trace_viewer;
   WINDOW *token_viewer;
+
+  void renderTraceWindow(pallas::ThreadReader *tr);
+  void renderTokenWindow(pallas::ThreadReader *tr);
 };
