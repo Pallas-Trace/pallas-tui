@@ -52,6 +52,7 @@ PallasExplorer::PallasExplorer(pallas::GlobalArchive global_archive) {
 
   this->current_archive_index = 0;
   this->current_thread_index = 0;
+  this->frame_begin_index = 0;
 
   this->readers = std::vector<std::vector<pallas::ThreadReader>>(global_archive.nb_archives);
   int reader_options = pallas::ThreadReaderOptions::None;
@@ -123,13 +124,28 @@ bool PallasExplorer::updateWindow() {
 }
 
 void PallasExplorer::renderTraceWindow(pallas::ThreadReader *tr) {
+  size_t current_callstack_index = tr->callstack_index[tr->current_frame];
+  if (current_callstack_index < this->frame_begin_index) {
+    this->frame_begin_index = current_callstack_index;
+  } else if (current_callstack_index > this->frame_begin_index + getmaxy(this->trace_viewer)) {
+    this->frame_begin_index = current_callstack_index - getmaxy(this->trace_viewer);
+  }
+
   werase(trace_viewer);
 
   auto current_iterable_token = tr->getCurIterable();
   if (current_iterable_token.type == pallas::TypeSequence) {
     auto seq = tr->thread_trace->getSequence(current_iterable_token);
-    for (pallas::Token tok : seq->tokens) {
+    for (int i = this->frame_begin_index; i - this->frame_begin_index < getmaxy(this->trace_viewer) && i < seq->tokens.size(); i++) {
+      pallas::Token tok = seq->tokens[i];
+      if (i == current_callstack_index) {
+        attron(A_STANDOUT);
+        wprintw(this->trace_viewer, "> ");
+      }
       wprintwToken(this->trace_viewer, tok);
+      if (i == current_callstack_index) {
+        attroff(A_STANDOUT);
+      }
       wprintw(this->trace_viewer, "\n");
     }
   } else if (current_iterable_token.type == pallas::TypeLoop) {

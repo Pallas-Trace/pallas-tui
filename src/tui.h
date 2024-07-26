@@ -22,6 +22,8 @@ private:
   size_t current_archive_index;
   size_t current_thread_index;
 
+  size_t frame_begin_index;
+
   WINDOW *trace_container;
   WINDOW *token_container;
 
