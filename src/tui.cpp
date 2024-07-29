@@ -139,12 +139,11 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *tr) {
     for (int i = this->frame_begin_index; i - this->frame_begin_index < getmaxy(this->trace_viewer) && i < seq->tokens.size(); i++) {
       pallas::Token tok = seq->tokens[i];
       if (i == current_callstack_index) {
-        attron(A_STANDOUT);
-        wprintw(this->trace_viewer, "> ");
+        wattron(this->trace_viewer, A_STANDOUT);
       }
       wprintwToken(this->trace_viewer, tok);
       if (i == current_callstack_index) {
-        attroff(A_STANDOUT);
+        wattroff(this->trace_viewer, A_STANDOUT);
       }
       wprintw(this->trace_viewer, "\n");
     }

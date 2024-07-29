@@ -10,7 +10,8 @@ link_libraries(ncurses)
 
 link_libraries(${PALLAS_LIBRARIES})
 link_directories(${PALLAS_LIBRARY_DIRS})
-include_directories(PUBLIC ${PALLAS_INCLUDE_DIRS})
+include_directories(${PALLAS_INCLUDE_DIRS})
+
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(pallas_explorer src/main.cpp src/tui.cpp)
