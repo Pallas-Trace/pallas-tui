@@ -6,6 +6,7 @@
 #include "pallas/pallas_read.h"
 #include "pallas/pallas_timestamp.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <curses.h>
@@ -185,16 +186,30 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *tr) {
       current_token_duration / 1e6
   );
 
-  wprintw(this->token_viewer, "\n\n");
-
-  int x, y;
-  getmaxyx(this->token_viewer, y, x);
-
   if (current_token.type != pallas::TypeLoop) {
-    Histogram hist = Histogram(tr, current_token, y - 6);
+    int x, y;
+    getmaxyx(this->token_viewer, y, x);
 
-    for (size_t num: hist.values)
-      wprintw(this->token_viewer, "%lu\n", num);
+    // top-left and bottom-right coordinates
+    int tlx = 3, tly = 6, brx = x - 3, bry = std::min(tly + 15, y - 3);
+
+    Histogram hist = Histogram(tr, current_token, brx - tlx);
+
+    // Adjust x coordiantes to the actual size of the histogram
+    size_t hist_size = hist.values.size();
+    size_t max_value = *std::max_element(hist.values.begin(), hist.values.end());
+
+    tlx = (x - hist_size) / 2;
+    brx = (x + hist_size) / 2;
+
+    for (int x = tlx; x < brx; x++) {
+      for (int y = tly; y < bry; y++) {
+        if (bry - y <= hist.values.at(x-tlx) * (bry-tly) / max_value)
+          wattron(this->token_viewer, A_STANDOUT);
+          mvwprintw(this->token_viewer, y, x, " ");
+          wattroff(this->token_viewer, A_STANDOUT);
+      }
+    }
   }
 
   wrefresh(this->token_viewer);
