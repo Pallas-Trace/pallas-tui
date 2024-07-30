@@ -1,22 +1,15 @@
 #include "tui.h"
+#include "helpers.h"
+
 #include "pallas/pallas.h"
 #include "pallas/pallas_archive.h"
 #include "pallas/pallas_read.h"
 #include "pallas/pallas_timestamp.h"
 
+#include <cstddef>
 #include <cstdlib>
 #include <curses.h>
-#include <iostream>
-#include <string>
 #include <vector>
-
-#define pallas_assert(cond, errmsg) if (!(cond)) panic(errmsg)
-
-void panic(std::string errmsg) {
-  endwin();
-  std::cerr << errmsg << std::endl;
-  exit(1);
-}
 
 void wprintwToken(WINDOW *win, const pallas::Token &tok) {
   switch (tok.type) {
@@ -60,9 +53,10 @@ PallasExplorer::PallasExplorer(pallas::GlobalArchive global_archive) {
   for (size_t i = 0; i < global_archive.nb_archives; i++) {
     auto archive = global_archive.archive_list[i];
     pallas_assert(archive->nb_threads > 0, "Malformed archive");
-    this->readers[i].reserve(archive->nb_threads);
+    this->readers[i] = std::vector<pallas::ThreadReader>();
     for (size_t j = 0; j < archive->nb_threads; j++) {
-      this->readers[i].emplace_back(global_archive.archive_list[i], global_archive.archive_list[i]->threads[j]->id, reader_options);
+      if (archive->threads[j])
+        this->readers[i].emplace_back(global_archive.archive_list[i], global_archive.archive_list[i]->threads[j]->id, reader_options);
     }
   }
 
@@ -127,8 +121,8 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *tr) {
   size_t current_callstack_index = tr->callstack_index[tr->current_frame];
   if (current_callstack_index < this->frame_begin_index) {
     this->frame_begin_index = current_callstack_index;
-  } else if (current_callstack_index > this->frame_begin_index + getmaxy(this->trace_viewer)) {
-    this->frame_begin_index = current_callstack_index - getmaxy(this->trace_viewer);
+  } else if (current_callstack_index >= this->frame_begin_index + getmaxy(this->trace_viewer)) {
+    this->frame_begin_index = current_callstack_index - getmaxy(this->trace_viewer) + 1;
   }
 
   werase(trace_viewer);
@@ -190,6 +184,18 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *tr) {
       tr->referential_timestamp / 1e6,
       current_token_duration / 1e6
   );
+
+  wprintw(this->token_viewer, "\n\n");
+
+  int x, y;
+  getmaxyx(this->token_viewer, y, x);
+
+  if (current_token.type != pallas::TypeLoop) {
+    Histogram hist = Histogram(tr, current_token, y - 6);
+
+    for (size_t num: hist.values)
+      wprintw(this->token_viewer, "%lu\n", num);
+  }
 
   wrefresh(this->token_viewer);
 }

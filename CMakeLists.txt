@@ -14,4 +14,6 @@ include_directories(${PALLAS_INCLUDE_DIRS})
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(pallas_explorer src/main.cpp src/tui.cpp)
+set(CMAKE_BUILD_TYPE Debug)
+
+add_executable(pallas_explorer src/main.cpp src/tui.cpp src/helpers.cpp)

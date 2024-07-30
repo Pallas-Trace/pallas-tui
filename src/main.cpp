@@ -46,6 +46,8 @@ int main(int argc, char *argv[]) {
 
   PallasExplorer explorer = PallasExplorer(trace);
 
+  std::cerr << "Done creating explorer" << std::endl;
+
   while (explorer.updateWindow()) {}
 
   endwin();
