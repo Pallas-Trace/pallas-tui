@@ -42,7 +42,7 @@ void wprintwToken(WINDOW *win, const pallas::Token &tok) {
   }
 }
 
-PallasExplorer::PallasExplorer(pallas::GlobalArchive global_archive) {
+PallasExplorer::PallasExplorer(const pallas::GlobalArchive& global_archive) {
   // Object initialisation
   this->global_archive = global_archive;
 
@@ -58,8 +58,9 @@ PallasExplorer::PallasExplorer(pallas::GlobalArchive global_archive) {
     pallas_assert(archive->nb_threads > 0, "Malformed archive");
     this->readers[i] = std::vector<pallas::ThreadReader>();
     for (size_t j = 0; j < archive->nb_threads; j++) {
-      if (archive->threads[j])
-        this->readers[i].emplace_back(global_archive.archive_list[i], global_archive.archive_list[i]->threads[j]->id, reader_options);
+        auto thread = archive->getThreadAt(j);
+        if (thread != nullptr)
+            readers[i].emplace_back(global_archive.archive_list[i], thread->id, reader_options);
     }
   }
 

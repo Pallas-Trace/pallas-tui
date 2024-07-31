@@ -7,7 +7,7 @@
 
 class PallasExplorer {
 public:
-  PallasExplorer(pallas::GlobalArchive global_archive);
+  PallasExplorer(const pallas::GlobalArchive& global_archive);
   PallasExplorer(PallasExplorer &&) = default;
   PallasExplorer(const PallasExplorer &) = default;
   PallasExplorer &operator=(PallasExplorer &&) = default;
