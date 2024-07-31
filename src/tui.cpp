@@ -12,6 +12,8 @@
 #include <curses.h>
 #include <vector>
 
+#define DESCRIPTION_BUFFER_SIZE 1024
+
 void wprintwToken(WINDOW *win, const pallas::Token &tok) {
   switch (tok.type) {
   case pallas::TypeEvent:
@@ -179,7 +181,7 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *thread_reader) {
 
   mvwprintw(
       this->token_viewer,
-      3, 0,
+      2, 0,
       "  Beginning timestamp : %lfs\n"
       "  Duration            : %lfs\n",
       thread_reader->referential_timestamp / 1e6,
@@ -187,11 +189,13 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *thread_reader) {
   );
 
   if (current_token.type == pallas::TypeEvent) {
+    char buffer[DESCRIPTION_BUFFER_SIZE];
+    thread_reader->thread_trace->printEventToString(thread_reader->thread_trace->getEvent(current_token), buffer, DESCRIPTION_BUFFER_SIZE);
     mvwprintw(
         this->token_viewer, 
-        6, 0,
-        "Description : %s",
-        "This is a description, deal with it"
+        4, 0,
+        "  Description         : %s",
+        buffer
     );
   }
 
