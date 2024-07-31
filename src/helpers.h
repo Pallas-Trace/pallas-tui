@@ -6,7 +6,7 @@
 
 #define pallas_assert(cond, errmsg) if (!(cond)) panic(errmsg)
 
-void panic(std::string errmsg);
+void panic(const std::string& errmsg);
 
 class Histogram {
 public:

@@ -13,7 +13,7 @@
 #include <tuple>
 #include <vector>
 
-void panic(std::string errmsg) {
+void panic(const std::string& errmsg) {
   endwin();
   std::cerr << errmsg << std::endl;
   exit(1);
@@ -22,15 +22,23 @@ void panic(std::string errmsg) {
 std::map<std::tuple<pallas::ThreadReader*, pallas::Token, size_t>, Histogram> memoized_histograms;
 
 Histogram::Histogram(pallas::ThreadReader *tr, pallas::Token token, size_t nvalues) {
-  pallas::LinkedVector *durations;
-  if (token.type == pallas::TypeEvent) {
-    durations = tr->thread_trace->getEventSummary(token)->durations;
-  } else if (token.type == pallas::TypeSequence) {
-    durations = tr->thread_trace->getSequence(token)->durations;
-  } else if (token.type == pallas::TypeLoop) {
-    panic("Cannot get histogram for loop");
-  } else if (token.type == pallas::TypeInvalid) {
-    panic("Encountered invalid token");
+  pallas::LinkedVector *durations = nullptr;
+  switch (token.type) {
+      case pallas::TypeEvent:
+          durations = tr->thread_trace->getEventSummary(token)->durations;
+          break;
+      case pallas::TypeSequence:
+          durations = tr->thread_trace->getSequence(token)->durations;
+          break;
+      case pallas::TypeLoop:
+          panic("Cannot get histogram for loop.");
+      case pallas::TypeInvalid:
+          panic("Encountered invalid token.");
+  }
+
+  if (durations == nullptr) {
+      panic("Duration array wasn't loaded.");
+      return;
   }
 
   nvalues = std::min(nvalues, durations->size);
@@ -38,28 +46,28 @@ Histogram::Histogram(pallas::ThreadReader *tr, pallas::Token token, size_t nvalu
   // Check if histogram hasn't been computed yet
   if (memoized_histograms.contains(std::tuple(tr, token, nvalues))) {
     Histogram hist = memoized_histograms.at(std::tuple(tr, token, nvalues));
-    this->timestep = hist.timestep;
-    this->values = hist.values;
-    this->min_duration = hist.min_duration;
-    this->max_duration = hist.max_duration;
+    timestep = hist.timestep;
+    values = hist.values;
+    min_duration = hist.min_duration;
+    max_duration = hist.max_duration;
     return;
   }
 
-  this->min_duration = *std::min_element(durations->begin(), durations->end());
-  this->max_duration = *std::max_element(durations->begin(), durations->end());
+  min_duration = *std::min_element(durations->begin(), durations->end());
+  max_duration = *std::max_element(durations->begin(), durations->end());
 
-  this->timestep = (this->max_duration - this->min_duration) / nvalues;
+  timestep = (max_duration - min_duration) / nvalues;
 
-  if (this->timestep == 0) {
-    this->values = std::vector<size_t>(1, durations->size);
+  if (timestep == 0) {
+    values = std::vector<size_t>(1, durations->size);
     return;
   }
 
-  this->values = std::vector<size_t>(nvalues);
+  values = std::vector<size_t>(nvalues);
   for (pallas_duration_t dur : *durations) {
     // Since duration space is now discrete, compute the index corresponding to current duration
-    size_t i = std::min((dur - this->min_duration) / this->timestep, nvalues-1);
-    this->values[i]++;
+    size_t i = std::min((dur - min_duration) / timestep, nvalues-1);
+    values[i]++;
   }
 }
 
