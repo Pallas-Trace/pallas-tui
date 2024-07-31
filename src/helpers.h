@@ -17,6 +17,8 @@ public:
   Histogram &operator=(const Histogram &) = default;
   ~Histogram();
 
+  pallas_duration_t min_duration;
+  pallas_duration_t max_duration;
   pallas_duration_t timestep;
   std::vector<size_t> values;
 };

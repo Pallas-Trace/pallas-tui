@@ -40,13 +40,15 @@ Histogram::Histogram(pallas::ThreadReader *tr, pallas::Token token, size_t nvalu
     Histogram hist = memoized_histograms.at(std::tuple(tr, token, nvalues));
     this->timestep = hist.timestep;
     this->values = hist.values;
+    this->min_duration = hist.min_duration;
+    this->max_duration = hist.max_duration;
     return;
   }
 
-  pallas_duration_t min_duration = *std::min_element(durations->begin(), durations->end());
-  pallas_duration_t max_duration = *std::max_element(durations->begin(), durations->end());
+  this->min_duration = *std::min_element(durations->begin(), durations->end());
+  this->max_duration = *std::max_element(durations->begin(), durations->end());
 
-  this->timestep = (max_duration - min_duration) / nvalues;
+  this->timestep = (this->max_duration - this->min_duration) / nvalues;
 
   if (this->timestep == 0) {
     this->values = std::vector<size_t>(1, durations->size);
@@ -56,7 +58,7 @@ Histogram::Histogram(pallas::ThreadReader *tr, pallas::Token token, size_t nvalu
   this->values = std::vector<size_t>(nvalues);
   for (pallas_duration_t dur : *durations) {
     // Since duration space is now discrete, compute the index corresponding to current duration
-    size_t i = std::min((dur - min_duration) / this->timestep, nvalues-1);
+    size_t i = std::min((dur - this->min_duration) / this->timestep, nvalues-1);
     this->values[i]++;
   }
 }
