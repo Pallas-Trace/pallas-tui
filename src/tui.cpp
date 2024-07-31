@@ -106,6 +106,7 @@ bool PallasExplorer::updateWindow() {
     break;
   case 'j':
   case KEY_DOWN:
+  case KEY_STAB:
     if (!thread_reader.isEndOfCurrentBlock()) thread_reader.moveToNextToken();
     break;
   case 'k':
@@ -116,6 +117,14 @@ bool PallasExplorer::updateWindow() {
   case KEY_RIGHT:
     if (tok.isIterable()) thread_reader.enterBlock(tok);
     break;
+  case '>':
+    this->current_thread_index = (this->current_thread_index + 1) % this->readers[current_archive_index].size();
+    break;
+  case '<':
+    this->current_thread_index = (this->current_thread_index - 1) % this->readers[current_archive_index].size();
+    break;
+  case '\t':
+    this->current_archive_index = (this->current_archive_index + 1) % this->readers.size();
   }
   return true;
 }
@@ -124,16 +133,20 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
   size_t current_callstack_index = thread_reader->callstack_index[thread_reader->current_frame];
   if (current_callstack_index < this->frame_begin_index) {
     this->frame_begin_index = current_callstack_index;
-  } else if (current_callstack_index >= this->frame_begin_index + getmaxy(this->trace_viewer)) {
-    this->frame_begin_index = current_callstack_index - getmaxy(this->trace_viewer) + 1;
+  } else if (current_callstack_index >= this->frame_begin_index + getmaxy(this->trace_viewer) - 1) {
+    this->frame_begin_index = current_callstack_index - getmaxy(this->trace_viewer) + 2;
   }
 
   werase(trace_viewer);
 
+  wattron(this->trace_viewer, A_BOLD);
+  wprintw(this->trace_viewer, "Archive %lu Thread %lu\n", this->current_archive_index, this->current_thread_index);
+  wattroff(this->trace_viewer, A_BOLD);
+
   auto current_iterable_token = thread_reader->getCurIterable();
   if (current_iterable_token.type == pallas::TypeSequence) {
     auto seq = thread_reader->thread_trace->getSequence(current_iterable_token);
-    for (int i = this->frame_begin_index; i - this->frame_begin_index < getmaxy(this->trace_viewer) && i < seq->tokens.size(); i++) {
+    for (int i = this->frame_begin_index; i - this->frame_begin_index < getmaxy(this->trace_viewer) - 1 && i < seq->tokens.size(); i++) {
       pallas::Token tok = seq->tokens[i];
       if (i == current_callstack_index) {
         wattron(this->trace_viewer, A_STANDOUT);
@@ -149,7 +162,7 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
     auto tok = loop->repeated_token;
     int nb_iterations = loop->nb_iterations.at(thread_reader->tokenCount[current_iterable_token]);
     wprintwToken(this->trace_viewer, tok);
-    wprintw(this->trace_viewer, "\t%d/%d", thread_reader->callstack_index[thread_reader->current_frame], nb_iterations);
+    wprintw(this->trace_viewer, "\t%d/%d", thread_reader->callstack_index[thread_reader->current_frame] + 1, nb_iterations);
   } else {
       panic("Current iterable token is not iterable");
   }
