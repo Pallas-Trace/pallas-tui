@@ -7,9 +7,10 @@
 #include "pallas/pallas_timestamp.h"
 
 #include <algorithm>
+#include <clocale>
 #include <cstddef>
 #include <cstdlib>
-#include <curses.h>
+#include <ncurses.h>
 #include <vector>
 
 #define DESCRIPTION_BUFFER_SIZE 1024
@@ -23,13 +24,6 @@ void wprintwToken(WINDOW *win, const pallas::Token &tok) {
         tok.id
     );
     break;
-  case pallas::TypeSequence:
-    wprintw(
-        win,
-        "Sequence %d",
-        tok.id
-    );
-    break;
   case pallas::TypeLoop:
     wprintw(
         win,
@@ -39,6 +33,13 @@ void wprintwToken(WINDOW *win, const pallas::Token &tok) {
     break;
   case pallas::TypeInvalid:
     panic("Encountered invalid token");
+  case pallas::TypeSequence:
+    wprintw(
+        win,
+        "Sequence %d",
+        tok.id
+    );
+    break;
   }
 }
 
@@ -65,6 +66,7 @@ PallasExplorer::PallasExplorer(const pallas::GlobalArchive& glob_arch) {
   }
 
   // Ncurses initialisation
+  setlocale(LC_ALL, "");
   initscr();
   cbreak();
   noecho();
@@ -95,7 +97,7 @@ bool PallasExplorer::updateWindow() {
   renderTraceWindow(&thread_reader);
   renderTokenWindow(&thread_reader);
 
-  pallas::Token tok = thread_reader.pollCurToken();
+  pallas::Token token = thread_reader.pollCurToken();
 
   int ch = wgetch(trace_viewer);
   switch (ch) {
@@ -107,7 +109,6 @@ bool PallasExplorer::updateWindow() {
     break;
   case 'j':
   case KEY_DOWN:
-  case KEY_STAB:
     if (!thread_reader.isEndOfCurrentBlock()) thread_reader.moveToNextToken();
     break;
   case 'k':
@@ -116,7 +117,19 @@ bool PallasExplorer::updateWindow() {
     break;
   case 'l':
   case KEY_RIGHT:
-    if (tok.isIterable()) thread_reader.enterBlock(tok);
+    if (token.isIterable()) thread_reader.enterBlock(token);
+    break;
+  case KEY_PPAGE:
+    for (int i = 0; i < getmaxy(this->trace_viewer) - 1 && thread_reader.callstack_index[thread_reader.current_frame] > 0; i++) {
+      thread_reader.moveToPrevToken();
+      this->frame_begin_index--;
+    }
+    break;
+  case KEY_NPAGE:
+    for (int i = 0; i < getmaxy(this->trace_viewer) - 1 && !thread_reader.isEndOfCurrentBlock(); i++) {
+      thread_reader.moveToNextToken();
+      this->frame_begin_index++;
+    }
     break;
   case '>':
     current_thread_index = (current_thread_index + 1) % readers[current_archive_index].size();
@@ -227,26 +240,29 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *thread_reader) {
 
     Histogram histogram = Histogram(thread_reader, current_token, bot_r_x - top_l_x);
 
-    // Adjust x coordiantes to the actual size of the histogram
-    size_t histogram_size = histogram.values.size();
-    size_t max_value = *std::max_element(histogram.values.begin(), histogram.values.end());
+    if (histogram.timestep != 0) {
+      size_t current_token_x = std::min((current_token_duration - histogram.min_duration) / histogram.timestep, histogram.values.size()-1);
+
+      // Adjust x coordiantes to the actual size of the histogram
+      size_t histogram_size = histogram.values.size();
+      size_t max_value = *std::max_element(histogram.values.begin(), histogram.values.end());
 
       top_l_x = (window_size_x - histogram_size) / 2;
       bot_r_x = (window_size_x + histogram_size) / 2;
 
-    for (int x = top_l_x; x < bot_r_x; x++) {
-      for (int y = top_l_y; y < bot_r_y; y++) {
-        if (bot_r_y - y <= histogram.values.at(x - top_l_x) * (bot_r_y - top_l_y) / max_value)
-          wattron(token_viewer, A_STANDOUT);
-          mvwprintw(token_viewer, y, x, " ");
-          wattroff(token_viewer, A_STANDOUT);
+      for (int x = top_l_x; x < bot_r_x; x++) {
+        for (int y = top_l_y; y < bot_r_y; y++) {
+          if (
+              (bot_r_y - y <= histogram.values.at(x-top_l_x) * (bot_r_y-top_l_y) / max_value) ||
+              (y == bot_r_y - 1 && histogram.values.at(x-top_l_x) > 0) // Still show value if there is one
+          ) {
+            if (x - top_l_x != current_token_x)
+              mvwaddch(this->token_viewer, y, x, ' ' | A_REVERSE | A_DIM);
+            else
+              mvwaddch(this->token_viewer, y, x, ' ' | A_REVERSE);
+          }
+        }
       }
-    }
-
-    if (histogram.timestep != 0) {
-      size_t current_token_x = std::min((current_token_duration - histogram.min_duration) / histogram.timestep, histogram.values.size()-1);
-      mvwprintw(token_viewer, top_l_y - 1, top_l_x + current_token_x, "v");
-      mvwprintw(token_viewer, top_l_y - 2, top_l_x + current_token_x, "|");
     }
   }
 
