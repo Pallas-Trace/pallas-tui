@@ -9,13 +9,15 @@
 #include <algorithm>
 #include <clocale>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
+#include <curses.h>
 #include <ncurses.h>
 #include <vector>
 
 #define DESCRIPTION_BUFFER_SIZE 1024
 
-void wprintwToken(WINDOW *win, const pallas::Token &tok) {
+void wprintwToken(WINDOW *win, const pallas::Token &tok, const pallas::ThreadReader *thread_reader) {
   switch (tok.type) {
   case pallas::TypeEvent:
     wprintw(
@@ -39,6 +41,24 @@ void wprintwToken(WINDOW *win, const pallas::Token &tok) {
         "Sequence %d",
         tok.id
     );
+    if (thread_reader) {
+      pallas::Token sequence_first_token = thread_reader->thread_trace->getSequence(tok)->tokens.at(0);
+      // If first token in sequence is an event, it's probably an Enter/Leave pattern,
+      // then we print the corresponding instruction
+      if (sequence_first_token.type == pallas::TypeEvent) {
+        char sequence_first_token_desc[DESCRIPTION_BUFFER_SIZE];
+        char sequence_title[DESCRIPTION_BUFFER_SIZE];
+        int enter_number;
+        thread_reader->thread_trace->printEventToString(
+            thread_reader->thread_trace->getEvent(sequence_first_token),
+            sequence_first_token_desc,
+            DESCRIPTION_BUFFER_SIZE
+        );
+        if (sscanf(sequence_first_token_desc, "Enter %d (%s)", &enter_number, sequence_title)) {
+          wprintw(win, " (%s", sequence_title);
+        };
+      }
+    }
     break;
   }
 }
@@ -168,7 +188,7 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
       if (i == current_callstack_index) {
         wattron(trace_viewer, A_STANDOUT);
       }
-      wprintwToken(trace_viewer, tok);
+      wprintwToken(trace_viewer, tok, thread_reader);
       if (i == current_callstack_index) {
         wattroff(trace_viewer, A_STANDOUT);
       }
@@ -178,7 +198,7 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
     auto loop = thread_reader->thread_trace->getLoop(current_iterable_token);
     auto tok = loop->repeated_token;
     int nb_iterations = loop->nb_iterations.at(thread_reader->tokenCount[current_iterable_token]);
-    wprintwToken(trace_viewer, tok);
+    wprintwToken(trace_viewer, tok, thread_reader);
     wprintw(trace_viewer, "\t%d/%d", thread_reader->callstack_index[thread_reader->current_frame] + 1, nb_iterations);
   } else {
       panic("Current iterable token is not iterable");
@@ -207,7 +227,7 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *thread_reader) {
   }
 
   // Print token information
-  wprintwToken(token_viewer, current_token);
+  wprintwToken(token_viewer, current_token, thread_reader);
 
   mvwprintw(
       token_viewer,
