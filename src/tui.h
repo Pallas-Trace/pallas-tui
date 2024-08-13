@@ -19,10 +19,9 @@ public:
 private:
   pallas::GlobalArchive global_archive;
   std::vector<std::vector<pallas::ThreadReader>> readers;
+  std::vector<std::vector<size_t>> current_trace_offsets;
   size_t current_archive_index;
   size_t current_thread_index;
-
-  size_t frame_begin_index;
 
   WINDOW *trace_container;
   WINDOW *token_container;
@@ -30,6 +29,10 @@ private:
   WINDOW *trace_viewer;
   WINDOW *token_viewer;
 
+  bool enable_timestamps;
+  int reader_flag;
+
   void renderTraceWindow(pallas::ThreadReader *tr);
   void renderTokenWindow(pallas::ThreadReader *tr);
+
 };

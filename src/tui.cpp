@@ -20,10 +20,17 @@
 void wprintwToken(WINDOW *win, const pallas::Token &tok, const pallas::ThreadReader *thread_reader) {
   switch (tok.type) {
   case pallas::TypeEvent:
+    char event_description_buffer[DESCRIPTION_BUFFER_SIZE];
+    thread_reader->thread_trace->printEventToString(
+        thread_reader->thread_trace->getEvent(tok),
+        event_description_buffer,
+        DESCRIPTION_BUFFER_SIZE
+    );
     wprintw(
         win,
-        "Event %d",
-        tok.id
+        "Event %d : %s",
+        tok.id,
+        event_description_buffer
     );
     break;
   case pallas::TypeLoop:
@@ -54,7 +61,7 @@ void wprintwToken(WINDOW *win, const pallas::Token &tok, const pallas::ThreadRea
             sequence_first_token_desc,
             DESCRIPTION_BUFFER_SIZE
         );
-        if (sscanf(sequence_first_token_desc, "Enter %d (%s)", &enter_number, sequence_title)) {
+        if (sscanf(sequence_first_token_desc, "Enter %d (%s\n", &enter_number, sequence_title)) {
           wprintw(win, " (%s", sequence_title);
         };
       }
@@ -69,19 +76,22 @@ PallasExplorer::PallasExplorer(const pallas::GlobalArchive& glob_arch) {
 
   current_archive_index = 0;
   current_thread_index = 0;
-  frame_begin_index = 0;
+
+  enable_timestamps = false;
+  reader_flag = PALLAS_READ_FLAG_NO_UNROLL;
 
   readers = std::vector<std::vector<pallas::ThreadReader>>(global_archive.nb_archives);
-  int reader_options = pallas::ThreadReaderOptions::None;
+  current_trace_offsets = std::vector<std::vector<size_t>>(global_archive.nb_archives);
   pallas_assert(global_archive.nb_archives > 0, "Malformed archive");
   for (size_t i = 0; i < global_archive.nb_archives; i++) {
     auto archive = global_archive.archive_list[i];
     pallas_assert(archive->nb_threads > 0, "Malformed archive");
     readers[i] = std::vector<pallas::ThreadReader>();
+    current_trace_offsets[i] = std::vector<size_t>(archive->nb_threads);
     for (size_t j = 0; j < archive->nb_threads; j++) {
         auto thread = archive->getThreadAt(j);
         if (thread != nullptr)
-            readers[i].emplace_back(global_archive.archive_list[i], thread->id, reader_options);
+            readers[i].emplace_back(global_archive.archive_list[i], thread->id, PALLAS_READ_FLAG_UNROLL_ALL);
     }
   }
 
@@ -113,6 +123,7 @@ PallasExplorer::PallasExplorer(const pallas::GlobalArchive& glob_arch) {
 
 bool PallasExplorer::updateWindow() {
   pallas::ThreadReader &thread_reader = readers[current_archive_index][current_thread_index];
+  size_t *current_trace_offset = &current_trace_offsets[current_archive_index][current_thread_index];
 
   renderTraceWindow(&thread_reader);
   renderTokenWindow(&thread_reader);
@@ -125,31 +136,40 @@ bool PallasExplorer::updateWindow() {
     return false;
   case 'h':
   case KEY_LEFT:
-    if (thread_reader.current_frame > 0) thread_reader.leaveBlock();
+    if (thread_reader.currentState.current_frame > 1) thread_reader.leaveBlock();
     break;
   case 'j':
   case KEY_DOWN:
-    if (!thread_reader.isEndOfCurrentBlock()) thread_reader.moveToNextToken();
+    thread_reader.moveToNextToken(reader_flag);
+    (*current_trace_offset)++;
     break;
   case 'k':
   case KEY_UP:
-    if (thread_reader.callstack_index[thread_reader.current_frame] > 0) thread_reader.moveToPrevToken();
+    thread_reader.moveToPrevToken(reader_flag);
+    (*current_trace_offset)--;
     break;
   case 'l':
   case KEY_RIGHT:
-    if (token.isIterable()) thread_reader.enterBlock(token);
+    if (token.isIterable()) thread_reader.enterBlock();
     break;
   case KEY_PPAGE:
-    for (int i = 0; i < getmaxy(this->trace_viewer) - 1 && thread_reader.callstack_index[thread_reader.current_frame] > 0; i++) {
-      thread_reader.moveToPrevToken();
-      this->frame_begin_index--;
+    for (int i = 0; i < getmaxy(this->trace_viewer) - 1; i++) {
+      thread_reader.moveToPrevToken(reader_flag);
     }
     break;
   case KEY_NPAGE:
-    for (int i = 0; i < getmaxy(this->trace_viewer) - 1 && !thread_reader.isEndOfCurrentBlock(); i++) {
-      thread_reader.moveToNextToken();
-      this->frame_begin_index++;
+    for (int i = 0; i < getmaxy(this->trace_viewer) - 1; i++) {
+      thread_reader.moveToNextToken(reader_flag);
     }
+    break;
+  case 't':
+    enable_timestamps = !enable_timestamps;
+    break;
+  case 'S':
+    reader_flag ^= PALLAS_READ_FLAG_UNROLL_SEQUENCE;
+    break;
+  case 'L':
+    reader_flag ^= PALLAS_READ_FLAG_UNROLL_LOOP;
     break;
   case '>':
     current_thread_index = (current_thread_index + 1) % readers[current_archive_index].size();
@@ -167,12 +187,13 @@ bool PallasExplorer::updateWindow() {
 }
 
 void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
-  size_t current_callstack_index = thread_reader->callstack_index[thread_reader->current_frame];
-  if (current_callstack_index < frame_begin_index) {
-    frame_begin_index = current_callstack_index;
-  } else if (current_callstack_index >= frame_begin_index + getmaxy(trace_viewer) - 1) {
-    frame_begin_index = current_callstack_index - getmaxy(trace_viewer) + 2;
-  }
+  size_t &current_trace_offset = current_trace_offsets.at(current_archive_index).at(current_thread_index);
+  if (current_trace_offset < 1)
+    current_trace_offset = 1;
+  if (current_trace_offset > getmaxy(trace_viewer) - 1)
+    current_trace_offset = getmaxy(trace_viewer) - 1;
+
+  pallas::Cursor current_cursor = thread_reader->createCheckpoint();
 
   werase(trace_viewer);
 
@@ -180,29 +201,39 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
   wprintw(trace_viewer, "Archive %lu Thread %lu\n", current_archive_index, current_thread_index);
   wattroff(trace_viewer, A_BOLD);
 
-  auto current_iterable_token = thread_reader->getCurIterable();
-  if (current_iterable_token.type == pallas::TypeSequence) {
-    auto seq = thread_reader->thread_trace->getSequence(current_iterable_token);
-    for (int i = frame_begin_index; i - frame_begin_index < getmaxy(trace_viewer) - 1 && i < seq->tokens.size(); i++) {
-      pallas::Token tok = seq->tokens[i];
-      if (i == current_callstack_index) {
-        wattron(trace_viewer, A_STANDOUT);
-      }
-      wprintwToken(trace_viewer, tok, thread_reader);
-      if (i == current_callstack_index) {
-        wattroff(trace_viewer, A_STANDOUT);
-      }
-      wprintw(trace_viewer, "\n");
-    }
-  } else if (current_iterable_token.type == pallas::TypeLoop) {
-    auto loop = thread_reader->thread_trace->getLoop(current_iterable_token);
-    auto tok = loop->repeated_token;
-    int nb_iterations = loop->nb_iterations.at(thread_reader->tokenCount[current_iterable_token]);
+  pallas::Token tok = thread_reader->pollCurToken();
+  wmove(trace_viewer, current_trace_offset, 0);
+  wattron(trace_viewer, A_STANDOUT);
+  if (enable_timestamps)
+    wprintw(trace_viewer, "%9.9lf\t", thread_reader->currentState.referential_timestamp / 1e9);
+  for (int t = 0; t < thread_reader->currentState.current_frame; t++)
+    wprintw(trace_viewer, "  ");
+  wprintwToken(trace_viewer, tok, thread_reader);
+  wattroff(trace_viewer, A_STANDOUT);
+
+  for (int i = current_trace_offset - 1; i > 0 && thread_reader->moveToPrevToken(reader_flag); i--) {
+    tok = thread_reader->pollCurToken();
+    wmove(trace_viewer, i, 0);
+    if (enable_timestamps)
+      wprintw(trace_viewer, "%9.9lf\t", thread_reader->currentState.referential_timestamp / 1e9);
+    for (int t = 0; t < thread_reader->currentState.current_frame; t++)
+      wprintw(trace_viewer, "  ");
     wprintwToken(trace_viewer, tok, thread_reader);
-    wprintw(trace_viewer, "\t%d/%d", thread_reader->callstack_index[thread_reader->current_frame] + 1, nb_iterations);
-  } else {
-      panic("Current iterable token is not iterable");
   }
+
+  thread_reader->loadCheckpoint(&current_cursor);
+
+  for (int i = current_trace_offset + 1; i < getmaxy(trace_viewer) && thread_reader->moveToNextToken(reader_flag); i++) {
+    tok = thread_reader->pollCurToken();
+    wmove(trace_viewer, i, 0);
+    if (enable_timestamps)
+      wprintw(trace_viewer, "%9.9lf\t", thread_reader->currentState.referential_timestamp / 1e9);
+    for (int t = 0; t < thread_reader->currentState.current_frame; t++)
+      wprintw(trace_viewer, "  ");
+    wprintwToken(trace_viewer, tok, thread_reader);
+  }
+
+  thread_reader->loadCheckpoint(&current_cursor);
 
   wrefresh(trace_viewer);
 }
@@ -214,10 +245,10 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *thread_reader) {
   pallas_duration_t current_token_duration = 0;
   switch (current_token.type) {
   case pallas::TypeEvent:
-    current_token_duration = thread_reader->getEventSummary(current_token)->durations->at(thread_reader->tokenCount[current_token]);
+    current_token_duration = thread_reader->getEventSummary(current_token)->durations->at(thread_reader->currentState.tokenCount[current_token]);
     break;
   case pallas::TypeSequence:
-    current_token_duration = thread_reader->thread_trace->getSequence(current_token)->durations->at(thread_reader->tokenCount[current_token]);
+    current_token_duration = thread_reader->thread_trace->getSequence(current_token)->durations->at(thread_reader->currentState.tokenCount[current_token]);
     break;
   case pallas::TypeLoop:
     current_token_duration = thread_reader->getLoopDuration(current_token);
@@ -232,10 +263,10 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *thread_reader) {
   mvwprintw(
       token_viewer,
       2, 0,
-      "  Beginning timestamp : %lfs\n"
-      "  Duration            : %lfs\n",
-      thread_reader->referential_timestamp / 1e6,
-      current_token_duration / 1e6
+      "  Beginning timestamp : %.9lfs\n"
+      "  Duration            : %.9lfs\n",
+      thread_reader->currentState.referential_timestamp / 1e9,
+      current_token_duration / 1e9
   );
 
   if (current_token.type == pallas::TypeEvent) {
