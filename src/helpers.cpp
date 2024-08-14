@@ -73,3 +73,50 @@ Histogram::Histogram(pallas::ThreadReader *tr, pallas::Token token, size_t nvalu
 
 Histogram::~Histogram() {
 }
+
+pallas_duration_t getTokenDuration(pallas::ThreadReader *thread_reader, pallas::Token token) {
+  if (token.type == pallas::TypeEvent) {
+    return thread_reader->
+      getEventSummary(token)->
+      durations->
+      at(thread_reader->currentState.tokenCount[token]);
+  }
+  if (token.type == pallas::TypeSequence) {
+    return thread_reader->
+      getSequenceOccurence(token, thread_reader->currentState.tokenCount[token]).duration;
+  }
+  if (token.type == pallas::TypeLoop) {
+    return thread_reader->getLoopDuration(token);
+  }
+  panic("Can't get token duration");
+  return 0;
+}
+
+double getLineColor(pallas::ThreadReader *thread_reader) {
+  pallas::Token current_token = thread_reader->pollCurToken();
+  pallas::Token current_iterable_token = thread_reader->getCurIterable();
+  size_t current_iterable_size = 0;
+  if (current_iterable_token.type == pallas::TypeSequence) {
+    current_iterable_size = thread_reader->
+      thread_trace->
+      getSequence(current_iterable_token)->
+      size();
+  } else if (current_iterable_token.type == pallas::TypeLoop) {
+    current_iterable_size = thread_reader->
+      thread_trace->
+      getLoop(current_iterable_token)->
+      nb_iterations
+      .at(thread_reader->currentState.tokenCount[current_iterable_token]);
+  } else {
+    panic("Current iterable is not iterable");
+  }
+  pallas_assert(current_iterable_size > 0, "Current iterable size is 0");
+
+  pallas_duration_t average_duration = getTokenDuration(thread_reader, current_iterable_token) / current_iterable_size;
+
+  double deviation_percentage = ( (double)getTokenDuration(thread_reader, current_token) - (double)average_duration ) / (double)average_duration;
+
+  if (deviation_percentage < GREEN_MAX_DEVIATION) return 1; // Green
+  else if (deviation_percentage > YELLOW_MAX_DEVIATION) return 3; // Red
+  else return 2; // Yellow
+}

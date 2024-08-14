@@ -6,6 +6,9 @@
 
 #define pallas_assert(cond, errmsg) if (!(cond)) panic(errmsg)
 
+#define GREEN_MAX_DEVIATION 1.
+#define YELLOW_MAX_DEVIATION 10.
+
 void panic(const std::string& errmsg);
 
 class Histogram {
@@ -22,3 +25,7 @@ public:
   pallas_duration_t timestep;
   std::vector<size_t> values;
 };
+
+pallas_duration_t getTokenDuration(pallas::ThreadReader *thread_reader, pallas::Token token);
+
+double getLineColor(pallas::ThreadReader *thread_reader);

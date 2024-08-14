@@ -30,9 +30,11 @@ private:
   WINDOW *token_viewer;
 
   bool enable_timestamps;
+  bool enable_duration_coloring;
   int reader_flag;
 
   void renderTraceWindow(pallas::ThreadReader *tr);
   void renderTokenWindow(pallas::ThreadReader *tr);
 
+  void printTraceToken(pallas::ThreadReader *tr);
 };

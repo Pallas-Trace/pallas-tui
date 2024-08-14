@@ -78,6 +78,7 @@ PallasExplorer::PallasExplorer(const pallas::GlobalArchive& glob_arch) {
   current_thread_index = 0;
 
   enable_timestamps = false;
+  enable_duration_coloring = false;
   reader_flag = PALLAS_READ_FLAG_NO_UNROLL;
 
   readers = std::vector<std::vector<pallas::ThreadReader>>(global_archive.nb_archives);
@@ -98,6 +99,10 @@ PallasExplorer::PallasExplorer(const pallas::GlobalArchive& glob_arch) {
   // Ncurses initialisation
   setlocale(LC_ALL, "");
   initscr();
+  start_color();
+  init_pair(1, COLOR_GREEN, COLOR_BLACK);
+  init_pair(2, COLOR_YELLOW, COLOR_BLACK);
+  init_pair(3, COLOR_RED, COLOR_BLACK);
   cbreak();
   noecho();
   curs_set(0);
@@ -134,6 +139,7 @@ bool PallasExplorer::updateWindow() {
   switch (ch) {
   case 'q':
     return false;
+  // Movement
   case 'h':
   case KEY_LEFT:
     if (thread_reader.currentState.current_frame > 1) thread_reader.leaveBlock();
@@ -162,6 +168,7 @@ bool PallasExplorer::updateWindow() {
       thread_reader.moveToNextToken(reader_flag);
     }
     break;
+  // Options
   case 't':
     enable_timestamps = !enable_timestamps;
     break;
@@ -171,6 +178,9 @@ bool PallasExplorer::updateWindow() {
   case 'L':
     reader_flag ^= PALLAS_READ_FLAG_UNROLL_LOOP;
     break;
+  case 'c':
+    enable_duration_coloring = !enable_duration_coloring;
+  // Changing traces
   case '>':
     current_thread_index = (current_thread_index + 1) % readers[current_archive_index].size();
     break;
@@ -184,6 +194,19 @@ bool PallasExplorer::updateWindow() {
     break;
   }
   return true;
+}
+
+void PallasExplorer::printTraceToken(pallas::ThreadReader *thread_reader) {
+  pallas::Token tok = thread_reader->pollCurToken();
+  short line_color = getLineColor(thread_reader);
+  if (enable_duration_coloring)
+    wattron(trace_viewer, COLOR_PAIR(line_color));
+  if (enable_timestamps)
+    wprintw(trace_viewer, "%d %9.9lf\t", line_color, thread_reader->currentState.referential_timestamp / 1e9);
+  for (int t = 0; t < thread_reader->currentState.current_frame; t++)
+    wprintw(trace_viewer, "  ");
+  wprintwToken(trace_viewer, tok, thread_reader);
+  wattroff(trace_viewer, COLOR_PAIR(line_color));
 }
 
 void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
@@ -201,36 +224,21 @@ void PallasExplorer::renderTraceWindow(pallas::ThreadReader *thread_reader) {
   wprintw(trace_viewer, "Archive %lu Thread %lu\n", current_archive_index, current_thread_index);
   wattroff(trace_viewer, A_BOLD);
 
-  pallas::Token tok = thread_reader->pollCurToken();
   wmove(trace_viewer, current_trace_offset, 0);
   wattron(trace_viewer, A_STANDOUT);
-  if (enable_timestamps)
-    wprintw(trace_viewer, "%9.9lf\t", thread_reader->currentState.referential_timestamp / 1e9);
-  for (int t = 0; t < thread_reader->currentState.current_frame; t++)
-    wprintw(trace_viewer, "  ");
-  wprintwToken(trace_viewer, tok, thread_reader);
+  printTraceToken(thread_reader);
   wattroff(trace_viewer, A_STANDOUT);
 
   for (int i = current_trace_offset - 1; i > 0 && thread_reader->moveToPrevToken(reader_flag); i--) {
-    tok = thread_reader->pollCurToken();
     wmove(trace_viewer, i, 0);
-    if (enable_timestamps)
-      wprintw(trace_viewer, "%9.9lf\t", thread_reader->currentState.referential_timestamp / 1e9);
-    for (int t = 0; t < thread_reader->currentState.current_frame; t++)
-      wprintw(trace_viewer, "  ");
-    wprintwToken(trace_viewer, tok, thread_reader);
+    printTraceToken(thread_reader);
   }
 
   thread_reader->loadCheckpoint(&current_cursor);
 
   for (int i = current_trace_offset + 1; i < getmaxy(trace_viewer) && thread_reader->moveToNextToken(reader_flag); i++) {
-    tok = thread_reader->pollCurToken();
     wmove(trace_viewer, i, 0);
-    if (enable_timestamps)
-      wprintw(trace_viewer, "%9.9lf\t", thread_reader->currentState.referential_timestamp / 1e9);
-    for (int t = 0; t < thread_reader->currentState.current_frame; t++)
-      wprintw(trace_viewer, "  ");
-    wprintwToken(trace_viewer, tok, thread_reader);
+    printTraceToken(thread_reader);
   }
 
   thread_reader->loadCheckpoint(&current_cursor);
@@ -242,20 +250,7 @@ void PallasExplorer::renderTokenWindow(pallas::ThreadReader *thread_reader) {
   werase(token_viewer);
   pallas::Token current_token = thread_reader->pollCurToken();
 
-  pallas_duration_t current_token_duration = 0;
-  switch (current_token.type) {
-  case pallas::TypeEvent:
-    current_token_duration = thread_reader->getEventSummary(current_token)->durations->at(thread_reader->currentState.tokenCount[current_token]);
-    break;
-  case pallas::TypeSequence:
-    current_token_duration = thread_reader->thread_trace->getSequence(current_token)->durations->at(thread_reader->currentState.tokenCount[current_token]);
-    break;
-  case pallas::TypeLoop:
-    current_token_duration = thread_reader->getLoopDuration(current_token);
-    break;
-  case pallas::TypeInvalid:
-    panic("Encountered invalid token");
-  }
+  pallas_duration_t current_token_duration = getTokenDuration(thread_reader, current_token);
 
   // Print token information
   wprintwToken(token_viewer, current_token, thread_reader);
