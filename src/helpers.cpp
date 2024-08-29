@@ -79,11 +79,11 @@ pallas_duration_t getTokenDuration(pallas::ThreadReader *thread_reader, pallas::
     return thread_reader->
       getEventSummary(token)->
       durations->
-      at(thread_reader->currentState.tokenCount[token]);
+      at(thread_reader->currentState.callstack->tokenCount[token]);
   }
   if (token.type == pallas::TypeSequence) {
     return thread_reader->
-      getSequenceOccurence(token, thread_reader->currentState.tokenCount[token]).duration;
+      getSequenceOccurence(token, thread_reader->currentState.currentFrame->tokenCount[token]).duration;
   }
   if (token.type == pallas::TypeLoop) {
     return thread_reader->getLoopDuration(token);
@@ -106,7 +106,7 @@ double getLineColor(pallas::ThreadReader *thread_reader) {
       thread_trace->
       getLoop(current_iterable_token)->
       nb_iterations
-      .at(thread_reader->currentState.tokenCount[current_iterable_token]);
+      .at(thread_reader->currentState.currentFrame->tokenCount[current_iterable_token]);
   } else {
     panic("Current iterable is not iterable");
   }

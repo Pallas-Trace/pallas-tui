@@ -3,13 +3,16 @@
 
 #include "tui.h"
 
-
 #include <iostream>
 #include <cstring>
+#include <csignal>
 
 // Curses for TUI
 #include <curses.h>
 
+void on_abort(int sig) {
+  endwin();
+}
 
 void usage(const char* prog_name) {
   std::cout << "Usage : " << prog_name << " [options] <trace file>" << std::endl;
@@ -18,6 +21,7 @@ void usage(const char* prog_name) {
 }
 
 int main(int argc, char *argv[]) {
+  signal(SIGABRT, on_abort);
   int nb_opts = 0;
 
   for (nb_opts = 1; nb_opts < argc; nb_opts++) {
