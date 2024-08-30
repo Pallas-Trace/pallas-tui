@@ -31,10 +31,12 @@ private:
 
   bool enable_timestamps;
   bool enable_duration_coloring;
+  bool enable_token_counts;
   int reader_flag;
 
   void renderTraceWindow(pallas::ThreadReader *tr);
   void renderTokenWindow(pallas::ThreadReader *tr);
 
+  void printTraceHeader(pallas::ThreadReader *thread_reader);
   void printTraceToken(pallas::ThreadReader *tr);
 };
