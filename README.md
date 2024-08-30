@@ -29,5 +29,6 @@ Use `hjkl` (vim style) or arrow keys to move arround the trace, right arrow to e
 Use `<` and `>` to switch between threads and `tab` to switch around archives.
 Use `t` to toggle timestamps in the trace window
 Use `c` to toggle coloring depending on the duration of the token in the trace window
+Use `n` to toggle token count in trace window
 Use `S` (Shift + s) and `L` (Shift + l) to respectively enable sequence and loop unrolling
 Press `q` at any time to leave the application.
